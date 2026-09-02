@@ -2,14 +2,32 @@ package kernel_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nodephone/server/internal/config"
 	"github.com/nodephone/server/internal/kernel"
 )
+
+func createTestConfigWithPort(t *testing.T, dataDir string, port int) {
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		t.Fatalf("failed to create data dir: %v", err)
+	}
+	cfg := config.DefaultConfig(dataDir, "testsecret")
+	cfg.Server.Port = port
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		t.Fatalf("failed to marshal test config: %v", err)
+	}
+	configPath := filepath.Join(dataDir, config.ConfigFile)
+	if err := os.WriteFile(configPath, data, 0600); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+}
 
 func TestVersion(t *testing.T) {
 	expected := "v0.1.0-dev"
@@ -20,13 +38,29 @@ func TestVersion(t *testing.T) {
 
 func TestKernelBoot(t *testing.T) {
 	tempDir := t.TempDir()
+	createTestConfigWithPort(t, tempDir, 0)
+
 	var buf bytes.Buffer
+	stopCh := make(chan os.Signal, 1)
 
-	k := kernel.New(&buf, kernel.WithDataDir(tempDir))
+	k := kernel.New(&buf, kernel.WithDataDir(tempDir), kernel.WithStopChannel(stopCh))
 
-	err := k.Boot()
-	if err != nil {
-		t.Fatalf("kernel.Boot() returned unexpected error: %v", err)
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- k.Boot()
+	}()
+
+	// Send shutdown signal after boot starts
+	time.Sleep(100 * time.Millisecond)
+	stopCh <- os.Interrupt
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("k.Boot() returned unexpected error: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for k.Boot() to complete shutdown")
 	}
 
 	output := buf.String()
@@ -37,13 +71,16 @@ func TestKernelBoot(t *testing.T) {
 		"[INFO] CPU Architecture:",
 		"[INFO] Initializing NodePhone data directory:",
 		"[OK] Data directory structure verified",
-		"[INFO] Configuration file not found. Generating default configuration...",
-		"[INFO] Generated cryptographically secure JWT secret",
-		"[OK] Default configuration saved to",
+		"[INFO] Loading existing configuration from",
+		"[OK] Existing configuration loaded successfully",
 		"[INFO] Creating database placeholder file:",
 		"[OK] Database placeholder file created:",
 		"[OK] Configuration Engine initialization complete",
 		"[OK] NodePhone Kernel initialized successfully.",
+		"NodePhone HTTP API Engine",
+		"[INFO] HTTP API Engine listening on",
+		"[INFO] Received termination signal",
+		"[OK] HTTP API Engine stopped cleanly",
 	}
 
 	for _, sub := range expectedSubstrings {
@@ -60,6 +97,11 @@ func TestKernelBoot(t *testing.T) {
 
 	if cfg.Server.Name != "NodePhone Server" {
 		t.Errorf("expected server name 'NodePhone Server', got %q", cfg.Server.Name)
+	}
+
+	// Verify API server instance
+	if k.APIServer() == nil {
+		t.Fatal("expected k.APIServer() to return non-nil server")
 	}
 }
 
@@ -85,9 +127,11 @@ func TestGetInfo(t *testing.T) {
 	}
 }
 
-func TestPackageLevelBoot(t *testing.T) {
+func TestPackageLevelBootNonBlocking(t *testing.T) {
 	tempDir := t.TempDir()
-	// Change working directory temporarily to test package-level Boot creating nodephone-data
+	dataDir := filepath.Join(tempDir, config.DefaultDataDir)
+	createTestConfigWithPort(t, dataDir, 0)
+
 	origDir, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("failed to get current working dir: %v", err)
@@ -100,13 +144,29 @@ func TestPackageLevelBoot(t *testing.T) {
 		t.Fatalf("failed to chdir to tempDir: %v", err)
 	}
 
-	err = kernel.Boot()
-	if err != nil {
-		t.Fatalf("package-level Boot() returned error: %v", err)
+	var buf bytes.Buffer
+	stopCh := make(chan os.Signal, 1)
+	k := kernel.New(&buf, kernel.WithStopChannel(stopCh))
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- k.Boot()
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+	stopCh <- os.Interrupt
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("k.Boot() returned error: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for k.Boot() to complete shutdown")
 	}
 
-	// Verify nodephone-data was created in current working dir
-	if _, err := os.Stat(filepath.Join(tempDir, config.DefaultDataDir, config.ConfigFile)); err != nil {
+	// Verify nodephone-data exists
+	if _, err := os.Stat(filepath.Join(dataDir, config.ConfigFile)); err != nil {
 		t.Errorf("expected default data dir config.json to exist: %v", err)
 	}
 }

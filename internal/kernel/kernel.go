@@ -7,6 +7,7 @@ import (
 	"os"
 	"runtime"
 
+	"github.com/nodephone/server/internal/api"
 	"github.com/nodephone/server/internal/config"
 )
 
@@ -23,13 +24,30 @@ func WithDataDir(dataDir string) Option {
 	}
 }
 
+// WithStopChannel configures a custom signal channel to control server shutdown during testing.
+func WithStopChannel(stopCh chan os.Signal) Option {
+	return func(k *Kernel) {
+		k.stopCh = stopCh
+	}
+}
+
+// WithNonBlocking runs the HTTP API server in background without blocking Boot(). Useful for tests.
+func WithNonBlocking(nonBlock bool) Option {
+	return func(k *Kernel) {
+		k.nonBlock = nonBlock
+	}
+}
+
 // Kernel represents the core NodePhone server kernel subsystem.
 type Kernel struct {
-	os      string
-	arch    string
-	out     io.Writer
-	dataDir string
-	config  *config.Config
+	os        string
+	arch      string
+	out       io.Writer
+	dataDir   string
+	config    *config.Config
+	apiServer *api.Server
+	stopCh    chan os.Signal
+	nonBlock  bool
 }
 
 // Info holds diagnostic information about the host system runtime environment.
@@ -75,8 +93,13 @@ func (k *Kernel) Config() *config.Config {
 	return k.config
 }
 
+// APIServer returns the initialized API engine server instance.
+func (k *Kernel) APIServer() *api.Server {
+	return k.apiServer
+}
+
 // Boot initializes the NodePhone server kernel sequence, executes the configuration engine,
-// and outputs system initialization diagnostics.
+// boots the HTTP API Engine, and handles server lifecycle operations.
 func (k *Kernel) Boot() error {
 	if k.out == nil {
 		return fmt.Errorf("kernel output writer is uninitialized")
@@ -96,7 +119,7 @@ func (k *Kernel) Boot() error {
 		return fmt.Errorf("failed to write CPU arch info: %w", err)
 	}
 
-	// Initialize Configuration Engine
+	// 1. Initialize Configuration Engine
 	cfgMgr := config.NewManager(k.dataDir, k.out)
 	cfg, err := cfgMgr.InitOrLoad()
 	if err != nil {
@@ -108,7 +131,18 @@ func (k *Kernel) Boot() error {
 		return fmt.Errorf("failed to write boot completion: %w", err)
 	}
 
-	return nil
+	// 2. Initialize HTTP API Engine
+	k.apiServer = api.NewServer(k.config, Version, k.out)
+
+	if k.nonBlock {
+		go func() {
+			_ = k.apiServer.Start()
+		}()
+		return nil
+	}
+
+	// 3. Start API Server with Graceful Shutdown listener
+	return k.apiServer.ListenAndServeWithGracefulShutdown(k.stopCh)
 }
 
 // Boot executes the default kernel boot sequence using standard output.
