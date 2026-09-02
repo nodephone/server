@@ -1,6 +1,6 @@
 # NodePhone Server Kernel (`nodephone/server`)
 
-> **Version:** `v0.1.0-dev`  
+> **Version:** `v1.0.0`  
 > **Repository:** `nodephone/server`  
 > **Language:** Go 1.22+  
 > **Database:** SQLite3 (WAL Mode, Foreign Keys ON)  

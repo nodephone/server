@@ -24,7 +24,7 @@ import (
 )
 
 // Version specifies the current release version of the NodePhone Server kernel.
-const Version = "v0.1.0-dev"
+const Version = "v1.0.0"
 
 // Option configures a Kernel instance.
 type Option func(*Kernel)
