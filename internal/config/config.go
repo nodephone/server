@@ -15,10 +15,11 @@ import (
 
 // Default paths and file names for the NodePhone data directory.
 const (
-	DefaultDataDir = "nodephone-data"
-	ConfigFile     = "config.json"
-	DBFile         = "main.db"
-	JWTSecretFile  = "secrets/jwt.key"
+	DefaultDataDir         = "nodephone-data"
+	ConfigFile             = "config.json"
+	DBFile                 = "main.db"
+	JWTSecretFile          = "secrets/jwt.key"
+	DefaultBackupRetention = 30
 )
 
 // DefaultSubdirectories defines the required folder hierarchy inside nodephone-data.
@@ -28,6 +29,7 @@ var DefaultSubdirectories = []string{
 	"media",
 	"storage",
 	"secrets",
+	"backups",
 }
 
 // Config represents the complete system configuration structure for NodePhone.
