@@ -1,0 +1,35 @@
+name: NodePhone Server CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    name: Build & Test Framework
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go Runtime
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          check-latest: true
+          cache: true
+
+      - name: Download Go Dependencies
+        run: go mod download
+
+      - name: Build Server Binary
+        run: go build -v ./...
+
+      - name: Execute Automated Test Suite & Coverage Report
+        run: go test -v -coverprofile=coverage.out ./...
+
+      - name: Display Coverage Summary
+        run: go tool cover -func=coverage.out
