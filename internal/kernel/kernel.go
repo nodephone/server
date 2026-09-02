@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/nodephone/server/internal/auth"
 	"github.com/nodephone/server/internal/config"
 	"github.com/nodephone/server/internal/database"
+	"github.com/nodephone/server/internal/storage"
 )
 
 // Version specifies the current release version of the NodePhone Server kernel.
@@ -44,16 +46,17 @@ func WithNonBlocking(nonBlock bool) Option {
 
 // Kernel represents the core NodePhone server kernel subsystem.
 type Kernel struct {
-	os          string
-	arch        string
-	out         io.Writer
-	dataDir     string
-	config      *config.Config
-	db          *database.DB
-	authService *auth.AuthService
-	apiServer   *api.Server
-	stopCh      chan os.Signal
-	nonBlock    bool
+	os             string
+	arch           string
+	out            io.Writer
+	dataDir        string
+	config         *config.Config
+	db             *database.DB
+	authService    *auth.AuthService
+	storageManager *storage.StorageManager
+	apiServer      *api.Server
+	stopCh         chan os.Signal
+	nonBlock       bool
 }
 
 // Info holds diagnostic information about the host system runtime environment.
@@ -109,6 +112,11 @@ func (k *Kernel) AuthService() *auth.AuthService {
 	return k.authService
 }
 
+// StorageManager returns the initialized storage manager instance.
+func (k *Kernel) StorageManager() *storage.StorageManager {
+	return k.storageManager
+}
+
 // APIServer returns the initialized API engine server instance.
 func (k *Kernel) APIServer() *api.Server {
 	return k.apiServer
@@ -116,7 +124,7 @@ func (k *Kernel) APIServer() *api.Server {
 
 // Boot initializes the NodePhone server kernel sequence, executes the configuration engine,
 // boots the SQLite database engine, executes schema migrations, boots the Authentication engine,
-// boots the HTTP API Engine, and handles server lifecycle operations.
+// boots the Storage engine, boots the HTTP API Engine, and handles server lifecycle operations.
 func (k *Kernel) Boot() error {
 	if k.out == nil {
 		return fmt.Errorf("kernel output writer is uninitialized")
@@ -166,12 +174,21 @@ func (k *Kernel) Boot() error {
 	k.authService = auth.NewAuthService(k.db, k.config.Auth.JWTSecret, k.out)
 	authHandler := auth.NewAuthHandler(k.authService)
 
+	// 5. Initialize Storage Engine
+	storageDir := filepath.Join(k.dataDir, "storage")
+	sm, err := storage.NewStorageManager(k.db, storageDir, k.config.Auth.JWTSecret, k.out)
+	if err != nil {
+		return fmt.Errorf("failed to initialize storage engine: %w", err)
+	}
+	k.storageManager = sm
+	storageHandler := storage.NewStorageHandler(k.storageManager, k.authService)
+
 	if _, err := fmt.Fprintf(k.out, "[OK] NodePhone Kernel initialized successfully.\n"); err != nil {
 		return fmt.Errorf("failed to write boot completion: %w", err)
 	}
 
-	// 5. Initialize HTTP API Engine
-	k.apiServer = api.NewServer(k.config, Version, k.out, authHandler)
+	// 6. Initialize HTTP API Engine
+	k.apiServer = api.NewServer(k.config, Version, k.out, authHandler, storageHandler)
 
 	if k.nonBlock {
 		go func() {
@@ -180,7 +197,7 @@ func (k *Kernel) Boot() error {
 		return nil
 	}
 
-	// 6. Start API Server with Graceful Shutdown listener
+	// 7. Start API Server with Graceful Shutdown listener
 	return k.apiServer.ListenAndServeWithGracefulShutdown(k.stopCh)
 }
 

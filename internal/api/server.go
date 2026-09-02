@@ -13,6 +13,7 @@ import (
 
 	"github.com/nodephone/server/internal/auth"
 	"github.com/nodephone/server/internal/config"
+	"github.com/nodephone/server/internal/storage"
 )
 
 // Server represents the NodePhone HTTP API engine server.
@@ -26,7 +27,7 @@ type Server struct {
 }
 
 // NewServer initializes a new Server instance configured with port and host settings from config.
-func NewServer(cfg *config.Config, version string, out io.Writer, authHandler *auth.AuthHandler) *Server {
+func NewServer(cfg *config.Config, version string, out io.Writer, authHandler *auth.AuthHandler, storageHandler *storage.StorageHandler) *Server {
 	if out == nil {
 		out = os.Stdout
 	}
@@ -46,7 +47,7 @@ func NewServer(cfg *config.Config, version string, out io.Writer, authHandler *a
 	addr := fmt.Sprintf("%s:%d", host, port)
 
 	handler := NewHandler(cfg, version)
-	router := NewRouter(handler, authHandler, out, DefaultTimeout)
+	router := NewRouter(handler, authHandler, storageHandler, out, DefaultTimeout)
 
 	httpServer := &http.Server{
 		Addr:         addr,
@@ -84,24 +85,31 @@ func (s *Server) Port() int {
 // PrintBanner outputs the formatted startup banner to the configured log writer.
 func (s *Server) PrintBanner() {
 	banner := fmt.Sprintf(`
-=======================================================
+===================================================================
   NodePhone HTTP API Engine (%s)
-=======================================================
+===================================================================
   Host        : %s
   Port        : %d
   Status      : RUNNING
   Endpoints   :
-    - GET  /                (Server Metadata)
-    - GET  /health          (Health Probe)
-    - GET  /version         (System Version Info)
-    - GET  /ready           (Readiness Probe)
-    - POST /api/auth/signup (User Account Registration)
-    - POST /api/auth/login  (User Authentication)
-    - POST /api/auth/logout (Revoke Active Session)
-    - POST /api/auth/refresh(Issue New Token Pair)
-    - GET  /api/auth/me     (Authenticated Profile)
-    - POST /api/auth/keys   (Generate API Key)
-=======================================================
+    - GET    /                                      (Server Metadata)
+    - GET    /health                                (Health Probe)
+    - GET    /version                               (System Version Info)
+    - GET    /ready                                 (Readiness Probe)
+    - POST   /api/auth/signup                       (User Account Registration)
+    - POST   /api/auth/login                        (User Authentication)
+    - POST   /api/auth/logout                       (Revoke Active Session)
+    - POST   /api/auth/refresh                      (Issue New Token Pair)
+    - GET    /api/auth/me                           (Authenticated Profile)
+    - POST   /api/auth/keys                         (Generate API Key)
+    - POST   /api/storage/buckets                   (Create Storage Bucket)
+    - GET    /api/storage/buckets                   (List Storage Buckets)
+    - DELETE /api/storage/buckets/{name}            (Delete Bucket)
+    - POST   /api/storage/buckets/{b}/objects       (Upload Object Stream)
+    - GET    /api/storage/buckets/{b}/objects/{n}   (Stream Object Content)
+    - DELETE /api/storage/buckets/{b}/objects/{n}   (Delete Object)
+    - POST   /api/storage/buckets/{b}/objects/{n}/sign (Signed Access URL)
+===================================================================
 `, s.version, s.host, s.port)
 
 	fmt.Fprint(s.out, banner)
