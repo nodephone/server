@@ -74,6 +74,21 @@ CREATE TABLE IF NOT EXISTS objects (
 );
 `,
 	},
+	{
+		Name: "003_permissions_engine",
+		SQL: `
+CREATE TABLE IF NOT EXISTS policies (
+    id TEXT PRIMARY KEY,
+    table_name TEXT NOT NULL,
+    action TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT '*',
+    expression TEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(table_name, action, role)
+);
+`,
+	},
 }
 
 // AutoMigrate executes all pending system migrations in order within transactions.
