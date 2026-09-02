@@ -31,7 +31,6 @@ func SetupTestEnv(t *testing.T) *TestEnvironment {
 		t.Fatalf("failed to create temp test data directory: %v", err)
 	}
 
-	// Override config path in tempDir
 	stopCh := make(chan os.Signal, 1)
 	k := kernel.New(nil, kernel.WithDataDir(tempDir), kernel.WithStopChannel(stopCh), kernel.WithNonBlocking(true))
 
@@ -40,10 +39,11 @@ func SetupTestEnv(t *testing.T) *TestEnvironment {
 		t.Fatalf("failed to boot test kernel: %v", err)
 	}
 
-	ts := httptest.NewServer(k.APIServer().APIRouter())
+	ts := httptest.NewServer(k.APIServer().Handler())
 
 	cleanup := func() {
 		ts.Close()
+		_ = k.Close()
 		_ = os.RemoveAll(tempDir)
 	}
 
@@ -53,10 +53,6 @@ func SetupTestEnv(t *testing.T) *TestEnvironment {
 		Server:  ts,
 		Cleanup: cleanup,
 	}
-}
-
-// APIRouter helper method to expose router from APIServer for testing
-func (k *KernelWrapper) APIRouter() {
 }
 
 // CreateTestUser signs up a test user and returns the user object and valid JWT access token.
@@ -103,5 +99,3 @@ func CreateTestAdmin(t *testing.T, k *kernel.Kernel) (*auth.User, string) {
 func randomSuffix() string {
 	return filepath.Base(os.Args[0])
 }
-
-type KernelWrapper struct{}

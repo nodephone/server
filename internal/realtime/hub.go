@@ -58,6 +58,11 @@ func (h *Hub) Run(ctx context.Context) {
 	}
 }
 
+// Stop gracefully terminates all client connections and resets the hub.
+func (h *Hub) Stop() {
+	h.closeAll()
+}
+
 // Register adds a client connection to the hub.
 func (h *Hub) Register(c *Client) {
 	h.register <- c

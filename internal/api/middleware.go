@@ -1,8 +1,10 @@
 package api
 
 import (
+	"bufio"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"runtime/debug"
 	"time"
@@ -49,6 +51,19 @@ func (rw *responseWriterInterceptor) Write(b []byte) (int, error) {
 	return rw.ResponseWriter.Write(b)
 }
 
+func (rw *responseWriterInterceptor) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hj, ok := rw.ResponseWriter.(http.Hijacker); ok {
+		return hj.Hijack()
+	}
+	return nil, nil, fmt.Errorf("underlying ResponseWriter does not implement http.Hijacker")
+}
+
+func (rw *responseWriterInterceptor) Flush() {
+	if fl, ok := rw.ResponseWriter.(http.Flusher); ok {
+		fl.Flush()
+	}
+}
+
 // LoggingMiddleware creates a middleware that logs incoming HTTP requests and execution duration.
 func LoggingMiddleware(out io.Writer) Middleware {
 	return func(next http.Handler) http.Handler {
@@ -89,12 +104,20 @@ func RecoveryMiddleware(out io.Writer) Middleware {
 }
 
 // TimeoutMiddleware creates a middleware that cancels the request context if processing exceeds duration.
+// WebSockets bypass TimeoutHandler to allow http.Hijacker access for connection upgrade.
 func TimeoutMiddleware(timeout time.Duration) Middleware {
 	return func(next http.Handler) http.Handler {
 		if timeout <= 0 {
 			return next
 		}
 		msg := `{"error":"Request Timeout"}`
-		return http.TimeoutHandler(next, timeout, msg)
+		th := http.TimeoutHandler(next, timeout, msg)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("Upgrade") == "websocket" {
+				next.ServeHTTP(w, r)
+				return
+			}
+			th.ServeHTTP(w, r)
+		})
 	}
 }

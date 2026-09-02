@@ -150,6 +150,17 @@ func (k *Kernel) APIServer() *api.Server {
 	return k.apiServer
 }
 
+// Close gracefully releases kernel resources including SQLite connections and background workers.
+func (k *Kernel) Close() error {
+	if k.db != nil {
+		_ = k.db.Close()
+	}
+	if k.realtimeHub != nil {
+		k.realtimeHub.Stop()
+	}
+	return nil
+}
+
 // Boot initializes the NodePhone server kernel sequence, executes the configuration engine,
 // boots the SQLite database engine, executes schema migrations, boots the Authentication engine,
 // boots the Storage engine, boots the Realtime engine, boots the Functions engine, boots the Permissions engine,
@@ -187,9 +198,6 @@ func (k *Kernel) Boot() error {
 		return fmt.Errorf("failed to initialize database engine: %w", err)
 	}
 	k.db = db
-	defer func() {
-		_ = k.db.Close()
-	}()
 
 	// 3. Execute Database Schema Auto-Migrations
 	migCtx, migCancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -214,10 +222,7 @@ func (k *Kernel) Boot() error {
 
 	// 6. Initialize Realtime Engine
 	k.realtimeHub = realtime.NewHub(k.out)
-	hubCtx, hubCancel := context.WithCancel(context.Background())
-	defer hubCancel()
-
-	go k.realtimeHub.Run(hubCtx)
+	go k.realtimeHub.Run(context.Background())
 	realtimeHandler := realtime.NewRealtimeHandler(k.realtimeHub, k.authService)
 
 	// 7. Initialize Functions Engine
@@ -255,7 +260,9 @@ func (k *Kernel) Boot() error {
 	}
 
 	// 11. Start API Server with Graceful Shutdown listener
-	return k.apiServer.ListenAndServeWithGracefulShutdown(k.stopCh)
+	err = k.apiServer.ListenAndServeWithGracefulShutdown(k.stopCh)
+	_ = k.Close()
+	return err
 }
 
 // Boot executes the default kernel boot sequence using standard output.

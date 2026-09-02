@@ -86,6 +86,11 @@ func (s *Server) Port() int {
 	return s.port
 }
 
+// Handler returns the underlying http.Handler configured for the server.
+func (s *Server) Handler() http.Handler {
+	return s.httpServer.Handler
+}
+
 // PrintBanner outputs the formatted startup banner to the configured log writer.
 func (s *Server) PrintBanner() {
 	banner := fmt.Sprintf(`
