@@ -7,6 +7,7 @@ import (
 
 	"github.com/nodephone/server/internal/auth"
 	"github.com/nodephone/server/internal/functions"
+	"github.com/nodephone/server/internal/openapi"
 	"github.com/nodephone/server/internal/permissions"
 	"github.com/nodephone/server/internal/realtime"
 	"github.com/nodephone/server/internal/storage"
@@ -16,7 +17,7 @@ import (
 const DefaultTimeout = 15 * time.Second
 
 // NewRouter sets up the HTTP router with registered endpoints and global middleware.
-func NewRouter(h *Handler, authHandler *auth.AuthHandler, storageHandler *storage.StorageHandler, realtimeHandler *realtime.RealtimeHandler, functionHandler *functions.FunctionHandler, policyHandler *permissions.PolicyHandler, out io.Writer, requestTimeout time.Duration) http.Handler {
+func NewRouter(h *Handler, authHandler *auth.AuthHandler, storageHandler *storage.StorageHandler, realtimeHandler *realtime.RealtimeHandler, functionHandler *functions.FunctionHandler, policyHandler *permissions.PolicyHandler, openapiHandler *openapi.OpenAPIHandler, out io.Writer, requestTimeout time.Duration) http.Handler {
 	if requestTimeout <= 0 {
 		requestTimeout = DefaultTimeout
 	}
@@ -70,6 +71,10 @@ func NewRouter(h *Handler, authHandler *auth.AuthHandler, storageHandler *storag
 		authMW := auth.AuthMiddleware(authHandler.Service())
 		mux.Handle("/api/permissions/policies", authMW(http.HandlerFunc(policyHandler.RoutePolicies)))
 		mux.Handle("/api/permissions/policies/", authMW(http.HandlerFunc(policyHandler.RoutePolicies)))
+	}
+
+	if openapiHandler != nil {
+		openapi.RegisterRoutes(mux, openapiHandler)
 	}
 
 	// Middleware chain: Recovery -> Logging -> Timeout
