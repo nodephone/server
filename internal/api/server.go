@@ -14,6 +14,7 @@ import (
 	"github.com/nodephone/server/internal/auth"
 	"github.com/nodephone/server/internal/config"
 	"github.com/nodephone/server/internal/functions"
+	"github.com/nodephone/server/internal/permissions"
 	"github.com/nodephone/server/internal/realtime"
 	"github.com/nodephone/server/internal/storage"
 )
@@ -29,7 +30,7 @@ type Server struct {
 }
 
 // NewServer initializes a new Server instance configured with port and host settings from config.
-func NewServer(cfg *config.Config, version string, out io.Writer, authHandler *auth.AuthHandler, storageHandler *storage.StorageHandler, realtimeHandler *realtime.RealtimeHandler, functionHandler *functions.FunctionHandler) *Server {
+func NewServer(cfg *config.Config, version string, out io.Writer, authHandler *auth.AuthHandler, storageHandler *storage.StorageHandler, realtimeHandler *realtime.RealtimeHandler, functionHandler *functions.FunctionHandler, policyHandler *permissions.PolicyHandler) *Server {
 	if out == nil {
 		out = os.Stdout
 	}
@@ -49,7 +50,7 @@ func NewServer(cfg *config.Config, version string, out io.Writer, authHandler *a
 	addr := fmt.Sprintf("%s:%d", host, port)
 
 	handler := NewHandler(cfg, version)
-	router := NewRouter(handler, authHandler, storageHandler, realtimeHandler, functionHandler, out, DefaultTimeout)
+	router := NewRouter(handler, authHandler, storageHandler, realtimeHandler, functionHandler, policyHandler, out, DefaultTimeout)
 
 	httpServer := &http.Server{
 		Addr:         addr,
@@ -115,6 +116,9 @@ func (s *Server) PrintBanner() {
     - GET    /api/realtime/presence                (Online User Presence)
     - GET    /api/functions                         (List Discovered Functions)
     - ALL    /api/functions/{name}                  (Invoke Serverless Function)
+    - POST   /api/permissions/policies              (Create Policy Rule - Admin)
+    - GET    /api/permissions/policies              (List Policy Rules - Admin)
+    - DELETE /api/permissions/policies/{id}         (Delete Policy Rule - Admin)
 ===================================================================
 `, s.version, s.host, s.port)
 

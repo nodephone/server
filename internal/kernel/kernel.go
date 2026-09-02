@@ -15,6 +15,7 @@ import (
 	"github.com/nodephone/server/internal/config"
 	"github.com/nodephone/server/internal/database"
 	"github.com/nodephone/server/internal/functions"
+	"github.com/nodephone/server/internal/permissions"
 	"github.com/nodephone/server/internal/realtime"
 	"github.com/nodephone/server/internal/storage"
 )
@@ -58,6 +59,7 @@ type Kernel struct {
 	storageManager  *storage.StorageManager
 	realtimeHub     *realtime.Hub
 	functionManager *functions.FunctionManager
+	policyManager   *permissions.PolicyManager
 	apiServer       *api.Server
 	stopCh          chan os.Signal
 	nonBlock        bool
@@ -131,6 +133,11 @@ func (k *Kernel) FunctionManager() *functions.FunctionManager {
 	return k.functionManager
 }
 
+// PolicyManager returns the initialized policy manager instance.
+func (k *Kernel) PolicyManager() *permissions.PolicyManager {
+	return k.policyManager
+}
+
 // APIServer returns the initialized API engine server instance.
 func (k *Kernel) APIServer() *api.Server {
 	return k.apiServer
@@ -138,8 +145,8 @@ func (k *Kernel) APIServer() *api.Server {
 
 // Boot initializes the NodePhone server kernel sequence, executes the configuration engine,
 // boots the SQLite database engine, executes schema migrations, boots the Authentication engine,
-// boots the Storage engine, boots the Realtime engine, boots the Functions engine, boots the HTTP API Engine,
-// and handles server lifecycle operations.
+// boots the Storage engine, boots the Realtime engine, boots the Functions engine, boots the Permissions engine,
+// boots the HTTP API Engine, and handles server lifecycle operations.
 func (k *Kernel) Boot() error {
 	if k.out == nil {
 		return fmt.Errorf("kernel output writer is uninitialized")
@@ -218,12 +225,16 @@ func (k *Kernel) Boot() error {
 	k.functionManager = fm
 	functionHandler := functions.NewFunctionHandler(k.functionManager)
 
+	// 8. Initialize Permissions Engine
+	k.policyManager = permissions.NewPolicyManager(k.db, k.out)
+	policyHandler := permissions.NewPolicyHandler(k.policyManager)
+
 	if _, err := fmt.Fprintf(k.out, "[OK] NodePhone Kernel initialized successfully.\n"); err != nil {
 		return fmt.Errorf("failed to write boot completion: %w", err)
 	}
 
-	// 8. Initialize HTTP API Engine
-	k.apiServer = api.NewServer(k.config, Version, k.out, authHandler, storageHandler, realtimeHandler, functionHandler)
+	// 9. Initialize HTTP API Engine
+	k.apiServer = api.NewServer(k.config, Version, k.out, authHandler, storageHandler, realtimeHandler, functionHandler, policyHandler)
 
 	if k.nonBlock {
 		go func() {
@@ -232,7 +243,7 @@ func (k *Kernel) Boot() error {
 		return nil
 	}
 
-	// 9. Start API Server with Graceful Shutdown listener
+	// 10. Start API Server with Graceful Shutdown listener
 	return k.apiServer.ListenAndServeWithGracefulShutdown(k.stopCh)
 }
 
