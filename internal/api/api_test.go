@@ -24,7 +24,7 @@ func TestEndpoints(t *testing.T) {
 
 	h := api.NewHandler(cfg, version)
 	var logBuf bytes.Buffer
-	router := api.NewRouter(h, nil, nil, nil, nil, nil, nil, nil, &logBuf, 5*time.Second)
+	router := api.NewRouter(h, nil, nil, nil, nil, nil, nil, nil, nil, &logBuf, 5*time.Second)
 
 	tests := []struct {
 		name           string
@@ -215,7 +215,7 @@ func TestServerStartupAndShutdown(t *testing.T) {
 	cfg.Server.Port = port
 
 	var logBuf bytes.Buffer
-	srv := api.NewServer(cfg, "v0.1.0-test", &logBuf, nil, nil, nil, nil, nil, nil, nil)
+	srv := api.NewServer(cfg, "v0.1.0-test", &logBuf, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -278,7 +278,7 @@ func TestListenAndServeWithGracefulShutdown(t *testing.T) {
 	cfg.Server.Port = port
 
 	var logBuf bytes.Buffer
-	srv := api.NewServer(cfg, "v0.1.0-test", &logBuf, nil, nil, nil, nil, nil, nil, nil)
+	srv := api.NewServer(cfg, "v0.1.0-test", &logBuf, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	stopCh := make(chan os.Signal, 1)
 

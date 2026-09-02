@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nodephone/server/internal/auth"
+	"github.com/nodephone/server/internal/backup"
 	"github.com/nodephone/server/internal/config"
 	"github.com/nodephone/server/internal/deploy"
 	"github.com/nodephone/server/internal/functions"
@@ -32,7 +33,7 @@ type Server struct {
 }
 
 // NewServer initializes a new Server instance configured with port and host settings from config.
-func NewServer(cfg *config.Config, version string, out io.Writer, authHandler *auth.AuthHandler, storageHandler *storage.StorageHandler, realtimeHandler *realtime.RealtimeHandler, functionHandler *functions.FunctionHandler, policyHandler *permissions.PolicyHandler, openapiHandler *openapi.OpenAPIHandler, deployHandler *deploy.DeployHandler) *Server {
+func NewServer(cfg *config.Config, version string, out io.Writer, authHandler *auth.AuthHandler, storageHandler *storage.StorageHandler, realtimeHandler *realtime.RealtimeHandler, functionHandler *functions.FunctionHandler, policyHandler *permissions.PolicyHandler, openapiHandler *openapi.OpenAPIHandler, deployHandler *deploy.DeployHandler, backupHandler *backup.BackupHandler) *Server {
 	if out == nil {
 		out = os.Stdout
 	}
@@ -52,7 +53,7 @@ func NewServer(cfg *config.Config, version string, out io.Writer, authHandler *a
 	addr := fmt.Sprintf("%s:%d", host, port)
 
 	handler := NewHandler(cfg, version)
-	router := NewRouter(handler, authHandler, storageHandler, realtimeHandler, functionHandler, policyHandler, openapiHandler, deployHandler, out, DefaultTimeout)
+	router := NewRouter(handler, authHandler, storageHandler, realtimeHandler, functionHandler, policyHandler, openapiHandler, deployHandler, backupHandler, out, DefaultTimeout)
 
 	httpServer := &http.Server{
 		Addr:         addr,
@@ -132,6 +133,11 @@ func (s *Server) PrintBanner() {
     - GET    /deploy/status                         (Deployment Engine Status)
     - GET    /deploy/health                         (Deployment Remote Health Probe)
     - GET/POST /deploy/domain                       (Deployment Custom Domain Info)
+    - POST   /api/backup/create                     (Create .npb Server Backup - Admin)
+    - POST   /api/backup/restore                    (Restore Full Server - Admin)
+    - GET    /api/backup/list                       (List Backup Snapshots - Admin)
+    - DELETE /api/backup/{id}                       (Delete Backup Snapshot - Admin)
+    - GET    /api/backup/status                     (Backup Engine Status - Admin)
 ===================================================================
 `, s.version, s.host, s.port)
 

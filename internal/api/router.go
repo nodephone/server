@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/nodephone/server/internal/auth"
+	"github.com/nodephone/server/internal/backup"
 	"github.com/nodephone/server/internal/deploy"
 	"github.com/nodephone/server/internal/functions"
 	"github.com/nodephone/server/internal/openapi"
@@ -18,7 +19,7 @@ import (
 const DefaultTimeout = 15 * time.Second
 
 // NewRouter sets up the HTTP router with registered endpoints and global middleware.
-func NewRouter(h *Handler, authHandler *auth.AuthHandler, storageHandler *storage.StorageHandler, realtimeHandler *realtime.RealtimeHandler, functionHandler *functions.FunctionHandler, policyHandler *permissions.PolicyHandler, openapiHandler *openapi.OpenAPIHandler, deployHandler *deploy.DeployHandler, out io.Writer, requestTimeout time.Duration) http.Handler {
+func NewRouter(h *Handler, authHandler *auth.AuthHandler, storageHandler *storage.StorageHandler, realtimeHandler *realtime.RealtimeHandler, functionHandler *functions.FunctionHandler, policyHandler *permissions.PolicyHandler, openapiHandler *openapi.OpenAPIHandler, deployHandler *deploy.DeployHandler, backupHandler *backup.BackupHandler, out io.Writer, requestTimeout time.Duration) http.Handler {
 	if requestTimeout <= 0 {
 		requestTimeout = DefaultTimeout
 	}
@@ -80,6 +81,10 @@ func NewRouter(h *Handler, authHandler *auth.AuthHandler, storageHandler *storag
 
 	if deployHandler != nil {
 		deploy.RegisterRoutes(mux, deployHandler)
+	}
+
+	if backupHandler != nil && authHandler != nil {
+		backup.RegisterRoutes(mux, backupHandler, authHandler.Service())
 	}
 
 	// Middleware chain: Recovery -> Logging -> Timeout
