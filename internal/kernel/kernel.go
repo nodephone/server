@@ -14,6 +14,7 @@ import (
 	"github.com/nodephone/server/internal/auth"
 	"github.com/nodephone/server/internal/config"
 	"github.com/nodephone/server/internal/database"
+	"github.com/nodephone/server/internal/realtime"
 	"github.com/nodephone/server/internal/storage"
 )
 
@@ -54,6 +55,7 @@ type Kernel struct {
 	db             *database.DB
 	authService    *auth.AuthService
 	storageManager *storage.StorageManager
+	realtimeHub    *realtime.Hub
 	apiServer      *api.Server
 	stopCh         chan os.Signal
 	nonBlock       bool
@@ -117,6 +119,11 @@ func (k *Kernel) StorageManager() *storage.StorageManager {
 	return k.storageManager
 }
 
+// RealtimeHub returns the initialized realtime hub instance.
+func (k *Kernel) RealtimeHub() *realtime.Hub {
+	return k.realtimeHub
+}
+
 // APIServer returns the initialized API engine server instance.
 func (k *Kernel) APIServer() *api.Server {
 	return k.apiServer
@@ -124,7 +131,7 @@ func (k *Kernel) APIServer() *api.Server {
 
 // Boot initializes the NodePhone server kernel sequence, executes the configuration engine,
 // boots the SQLite database engine, executes schema migrations, boots the Authentication engine,
-// boots the Storage engine, boots the HTTP API Engine, and handles server lifecycle operations.
+// boots the Storage engine, boots the Realtime engine, boots the HTTP API Engine, and handles server lifecycle operations.
 func (k *Kernel) Boot() error {
 	if k.out == nil {
 		return fmt.Errorf("kernel output writer is uninitialized")
@@ -183,12 +190,20 @@ func (k *Kernel) Boot() error {
 	k.storageManager = sm
 	storageHandler := storage.NewStorageHandler(k.storageManager, k.authService)
 
+	// 6. Initialize Realtime Engine
+	k.realtimeHub = realtime.NewHub(k.out)
+	hubCtx, hubCancel := context.WithCancel(context.Background())
+	defer hubCancel()
+
+	go k.realtimeHub.Run(hubCtx)
+	realtimeHandler := realtime.NewRealtimeHandler(k.realtimeHub, k.authService)
+
 	if _, err := fmt.Fprintf(k.out, "[OK] NodePhone Kernel initialized successfully.\n"); err != nil {
 		return fmt.Errorf("failed to write boot completion: %w", err)
 	}
 
-	// 6. Initialize HTTP API Engine
-	k.apiServer = api.NewServer(k.config, Version, k.out, authHandler, storageHandler)
+	// 7. Initialize HTTP API Engine
+	k.apiServer = api.NewServer(k.config, Version, k.out, authHandler, storageHandler, realtimeHandler)
 
 	if k.nonBlock {
 		go func() {
@@ -197,7 +212,7 @@ func (k *Kernel) Boot() error {
 		return nil
 	}
 
-	// 7. Start API Server with Graceful Shutdown listener
+	// 8. Start API Server with Graceful Shutdown listener
 	return k.apiServer.ListenAndServeWithGracefulShutdown(k.stopCh)
 }
 
