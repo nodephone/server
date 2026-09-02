@@ -13,6 +13,7 @@ import (
 
 	"github.com/nodephone/server/internal/auth"
 	"github.com/nodephone/server/internal/config"
+	"github.com/nodephone/server/internal/functions"
 	"github.com/nodephone/server/internal/realtime"
 	"github.com/nodephone/server/internal/storage"
 )
@@ -28,7 +29,7 @@ type Server struct {
 }
 
 // NewServer initializes a new Server instance configured with port and host settings from config.
-func NewServer(cfg *config.Config, version string, out io.Writer, authHandler *auth.AuthHandler, storageHandler *storage.StorageHandler, realtimeHandler *realtime.RealtimeHandler) *Server {
+func NewServer(cfg *config.Config, version string, out io.Writer, authHandler *auth.AuthHandler, storageHandler *storage.StorageHandler, realtimeHandler *realtime.RealtimeHandler, functionHandler *functions.FunctionHandler) *Server {
 	if out == nil {
 		out = os.Stdout
 	}
@@ -48,7 +49,7 @@ func NewServer(cfg *config.Config, version string, out io.Writer, authHandler *a
 	addr := fmt.Sprintf("%s:%d", host, port)
 
 	handler := NewHandler(cfg, version)
-	router := NewRouter(handler, authHandler, storageHandler, realtimeHandler, out, DefaultTimeout)
+	router := NewRouter(handler, authHandler, storageHandler, realtimeHandler, functionHandler, out, DefaultTimeout)
 
 	httpServer := &http.Server{
 		Addr:         addr,
@@ -112,6 +113,8 @@ func (s *Server) PrintBanner() {
     - POST   /api/storage/buckets/{b}/objects/{n}/sign (Signed Access URL)
     - WS     /realtime                              (Realtime WebSocket Engine)
     - GET    /api/realtime/presence                (Online User Presence)
+    - GET    /api/functions                         (List Discovered Functions)
+    - ALL    /api/functions/{name}                  (Invoke Serverless Function)
 ===================================================================
 `, s.version, s.host, s.port)
 

@@ -14,6 +14,7 @@ import (
 	"github.com/nodephone/server/internal/auth"
 	"github.com/nodephone/server/internal/config"
 	"github.com/nodephone/server/internal/database"
+	"github.com/nodephone/server/internal/functions"
 	"github.com/nodephone/server/internal/realtime"
 	"github.com/nodephone/server/internal/storage"
 )
@@ -47,18 +48,19 @@ func WithNonBlocking(nonBlock bool) Option {
 
 // Kernel represents the core NodePhone server kernel subsystem.
 type Kernel struct {
-	os             string
-	arch           string
-	out            io.Writer
-	dataDir        string
-	config         *config.Config
-	db             *database.DB
-	authService    *auth.AuthService
-	storageManager *storage.StorageManager
-	realtimeHub    *realtime.Hub
-	apiServer      *api.Server
-	stopCh         chan os.Signal
-	nonBlock       bool
+	os              string
+	arch            string
+	out             io.Writer
+	dataDir         string
+	config          *config.Config
+	db              *database.DB
+	authService     *auth.AuthService
+	storageManager  *storage.StorageManager
+	realtimeHub     *realtime.Hub
+	functionManager *functions.FunctionManager
+	apiServer       *api.Server
+	stopCh          chan os.Signal
+	nonBlock        bool
 }
 
 // Info holds diagnostic information about the host system runtime environment.
@@ -124,6 +126,11 @@ func (k *Kernel) RealtimeHub() *realtime.Hub {
 	return k.realtimeHub
 }
 
+// FunctionManager returns the initialized functions manager instance.
+func (k *Kernel) FunctionManager() *functions.FunctionManager {
+	return k.functionManager
+}
+
 // APIServer returns the initialized API engine server instance.
 func (k *Kernel) APIServer() *api.Server {
 	return k.apiServer
@@ -131,7 +138,8 @@ func (k *Kernel) APIServer() *api.Server {
 
 // Boot initializes the NodePhone server kernel sequence, executes the configuration engine,
 // boots the SQLite database engine, executes schema migrations, boots the Authentication engine,
-// boots the Storage engine, boots the Realtime engine, boots the HTTP API Engine, and handles server lifecycle operations.
+// boots the Storage engine, boots the Realtime engine, boots the Functions engine, boots the HTTP API Engine,
+// and handles server lifecycle operations.
 func (k *Kernel) Boot() error {
 	if k.out == nil {
 		return fmt.Errorf("kernel output writer is uninitialized")
@@ -198,12 +206,24 @@ func (k *Kernel) Boot() error {
 	go k.realtimeHub.Run(hubCtx)
 	realtimeHandler := realtime.NewRealtimeHandler(k.realtimeHub, k.authService)
 
+	// 7. Initialize Functions Engine
+	funcDir := filepath.Join(k.dataDir, "functions")
+	fm, err := functions.NewFunctionManager(funcDir, k.out)
+	if err != nil {
+		return fmt.Errorf("failed to initialize functions engine: %w", err)
+	}
+	if err := fm.Discover(); err != nil {
+		return fmt.Errorf("failed to discover functions: %w", err)
+	}
+	k.functionManager = fm
+	functionHandler := functions.NewFunctionHandler(k.functionManager)
+
 	if _, err := fmt.Fprintf(k.out, "[OK] NodePhone Kernel initialized successfully.\n"); err != nil {
 		return fmt.Errorf("failed to write boot completion: %w", err)
 	}
 
-	// 7. Initialize HTTP API Engine
-	k.apiServer = api.NewServer(k.config, Version, k.out, authHandler, storageHandler, realtimeHandler)
+	// 8. Initialize HTTP API Engine
+	k.apiServer = api.NewServer(k.config, Version, k.out, authHandler, storageHandler, realtimeHandler, functionHandler)
 
 	if k.nonBlock {
 		go func() {
@@ -212,7 +232,7 @@ func (k *Kernel) Boot() error {
 		return nil
 	}
 
-	// 8. Start API Server with Graceful Shutdown listener
+	// 9. Start API Server with Graceful Shutdown listener
 	return k.apiServer.ListenAndServeWithGracefulShutdown(k.stopCh)
 }
 

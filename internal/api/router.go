@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/nodephone/server/internal/auth"
+	"github.com/nodephone/server/internal/functions"
 	"github.com/nodephone/server/internal/realtime"
 	"github.com/nodephone/server/internal/storage"
 )
@@ -14,7 +15,7 @@ import (
 const DefaultTimeout = 15 * time.Second
 
 // NewRouter sets up the HTTP router with registered endpoints and global middleware.
-func NewRouter(h *Handler, authHandler *auth.AuthHandler, storageHandler *storage.StorageHandler, realtimeHandler *realtime.RealtimeHandler, out io.Writer, requestTimeout time.Duration) http.Handler {
+func NewRouter(h *Handler, authHandler *auth.AuthHandler, storageHandler *storage.StorageHandler, realtimeHandler *realtime.RealtimeHandler, functionHandler *functions.FunctionHandler, out io.Writer, requestTimeout time.Duration) http.Handler {
 	if requestTimeout <= 0 {
 		requestTimeout = DefaultTimeout
 	}
@@ -57,6 +58,11 @@ func NewRouter(h *Handler, authHandler *auth.AuthHandler, storageHandler *storag
 	if realtimeHandler != nil {
 		mux.HandleFunc("/realtime", realtimeHandler.ServeWS)
 		mux.HandleFunc("/api/realtime/presence", realtimeHandler.GetPresence)
+	}
+
+	if functionHandler != nil {
+		mux.HandleFunc("/api/functions", functionHandler.RouteFunctions)
+		mux.HandleFunc("/api/functions/", functionHandler.RouteFunctions)
 	}
 
 	// Middleware chain: Recovery -> Logging -> Timeout
