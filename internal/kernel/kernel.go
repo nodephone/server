@@ -14,6 +14,7 @@ import (
 	"github.com/nodephone/server/internal/auth"
 	"github.com/nodephone/server/internal/config"
 	"github.com/nodephone/server/internal/database"
+	"github.com/nodephone/server/internal/deploy"
 	"github.com/nodephone/server/internal/functions"
 	"github.com/nodephone/server/internal/openapi"
 	"github.com/nodephone/server/internal/permissions"
@@ -62,6 +63,7 @@ type Kernel struct {
 	functionManager *functions.FunctionManager
 	policyManager   *permissions.PolicyManager
 	openapiEngine   *openapi.Engine
+	deployEngine    *deploy.DeploymentEngine
 	apiServer       *api.Server
 	stopCh          chan os.Signal
 	nonBlock        bool
@@ -145,6 +147,11 @@ func (k *Kernel) OpenAPIEngine() *openapi.Engine {
 	return k.openapiEngine
 }
 
+// DeploymentEngine returns the initialized DeploymentEngine instance.
+func (k *Kernel) DeploymentEngine() *deploy.DeploymentEngine {
+	return k.deployEngine
+}
+
 // APIServer returns the initialized API engine server instance.
 func (k *Kernel) APIServer() *api.Server {
 	return k.apiServer
@@ -158,13 +165,16 @@ func (k *Kernel) Close() error {
 	if k.realtimeHub != nil {
 		k.realtimeHub.Stop()
 	}
+	if k.deployEngine != nil {
+		_ = k.deployEngine.Stop()
+	}
 	return nil
 }
 
 // Boot initializes the NodePhone server kernel sequence, executes the configuration engine,
 // boots the SQLite database engine, executes schema migrations, boots the Authentication engine,
 // boots the Storage engine, boots the Realtime engine, boots the Functions engine, boots the Permissions engine,
-// boots the OpenAPI engine, boots the HTTP API Engine, and handles server lifecycle operations.
+// boots the OpenAPI engine, boots the Deployment engine, boots the HTTP API Engine, and handles server lifecycle operations.
 func (k *Kernel) Boot() error {
 	if k.out == nil {
 		return fmt.Errorf("kernel output writer is uninitialized")
@@ -245,12 +255,18 @@ func (k *Kernel) Boot() error {
 	k.openapiEngine = openapi.NewEngine(k.config, k.out)
 	openapiHandler := openapi.NewOpenAPIHandler(k.openapiEngine)
 
+	// 10. Initialize Deployment Engine
+	deployCfg := deploy.DefaultDeployConfig()
+	k.deployEngine = deploy.NewDeploymentEngine(deployCfg, k.out)
+	_ = k.deployEngine.Start(context.Background(), k.config.Server.Port)
+	deployHandler := deploy.NewDeployHandler(k.deployEngine)
+
 	if _, err := fmt.Fprintf(k.out, "[OK] NodePhone Kernel initialized successfully.\n"); err != nil {
 		return fmt.Errorf("failed to write boot completion: %w", err)
 	}
 
-	// 10. Initialize HTTP API Engine
-	k.apiServer = api.NewServer(k.config, Version, k.out, authHandler, storageHandler, realtimeHandler, functionHandler, policyHandler, openapiHandler)
+	// 11. Initialize HTTP API Engine
+	k.apiServer = api.NewServer(k.config, Version, k.out, authHandler, storageHandler, realtimeHandler, functionHandler, policyHandler, openapiHandler, deployHandler)
 
 	if k.nonBlock {
 		go func() {
@@ -259,7 +275,7 @@ func (k *Kernel) Boot() error {
 		return nil
 	}
 
-	// 11. Start API Server with Graceful Shutdown listener
+	// 12. Start API Server with Graceful Shutdown listener
 	err = k.apiServer.ListenAndServeWithGracefulShutdown(k.stopCh)
 	_ = k.Close()
 	return err
