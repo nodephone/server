@@ -37,6 +37,38 @@ func TestGenerateJWTSecret(t *testing.T) {
 	}
 }
 
+func TestLoadOrGenerateJWTSecret(t *testing.T) {
+	tempDir := t.TempDir()
+	var logBuf bytes.Buffer
+
+	// 1. Initial generation
+	sec1, err := config.LoadOrGenerateJWTSecret(tempDir, &logBuf)
+	if err != nil {
+		t.Fatalf("LoadOrGenerateJWTSecret failed: %v", err)
+	}
+	if len(sec1) != 64 {
+		t.Errorf("expected 64 char hex secret, got %q", sec1)
+	}
+
+	secretFile := filepath.Join(tempDir, config.JWTSecretFile)
+	if _, err := os.Stat(secretFile); err != nil {
+		t.Errorf("expected jwt.key secret file to exist: %v", err)
+	}
+
+	// 2. Load existing secret
+	logBuf.Reset()
+	sec2, err := config.LoadOrGenerateJWTSecret(tempDir, &logBuf)
+	if err != nil {
+		t.Fatalf("LoadOrGenerateJWTSecret second call failed: %v", err)
+	}
+	if sec1 != sec2 {
+		t.Errorf("expected loaded secret %q to match generated secret %q", sec2, sec1)
+	}
+	if !strings.Contains(logBuf.String(), "[INFO] Loaded JWT secret key from") {
+		t.Errorf("expected log output to indicate loading existing secret, got:\n%s", logBuf.String())
+	}
+}
+
 func TestInitOrLoad_FreshBoot(t *testing.T) {
 	tempDir := t.TempDir()
 	var logBuf bytes.Buffer
@@ -94,7 +126,6 @@ func TestInitOrLoad_FreshBoot(t *testing.T) {
 		"[INFO] Initializing NodePhone data directory:",
 		"[OK] Data directory structure verified",
 		"[INFO] Configuration file not found. Generating default configuration...",
-		"[INFO] Generated cryptographically secure JWT secret",
 		"[OK] Default configuration saved to",
 		"[INFO] Creating database placeholder file:",
 		"[OK] Database placeholder file created:",

@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Default paths and file names for the NodePhone data directory.
@@ -17,6 +18,7 @@ const (
 	DefaultDataDir = "nodephone-data"
 	ConfigFile     = "config.json"
 	DBFile         = "main.db"
+	JWTSecretFile  = "secrets/jwt.key"
 )
 
 // DefaultSubdirectories defines the required folder hierarchy inside nodephone-data.
@@ -25,6 +27,7 @@ var DefaultSubdirectories = []string{
 	"certs",
 	"media",
 	"storage",
+	"secrets",
 }
 
 // Config represents the complete system configuration structure for NodePhone.
@@ -91,6 +94,44 @@ func GenerateJWTSecret() (string, error) {
 	return hex.EncodeToString(bytes), nil
 }
 
+// LoadOrGenerateJWTSecret loads the JWT secret from nodephone-data/secrets/jwt.key,
+// or generates and persists a new 32-byte secret if missing.
+func LoadOrGenerateJWTSecret(dataDir string, out io.Writer) (string, error) {
+	if out == nil {
+		out = io.Discard
+	}
+	secretPath := filepath.Join(dataDir, JWTSecretFile)
+	secretsDir := filepath.Dir(secretPath)
+
+	if err := os.MkdirAll(secretsDir, 0700); err != nil {
+		return "", fmt.Errorf("failed to create secrets directory %q: %w", secretsDir, err)
+	}
+
+	data, err := os.ReadFile(secretPath)
+	if err == nil {
+		secret := strings.TrimSpace(string(data))
+		if secret != "" {
+			fmt.Fprintf(out, "[INFO] Loaded JWT secret key from %s\n", secretPath)
+			return secret, nil
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("failed to read JWT secret file %q: %w", secretPath, err)
+	}
+
+	fmt.Fprintf(out, "[INFO] Secret file %s not found. Generating new JWT secret key...\n", secretPath)
+	secret, err := GenerateJWTSecret()
+	if err != nil {
+		return "", err
+	}
+
+	if err := os.WriteFile(secretPath, []byte(secret+"\n"), 0600); err != nil {
+		return "", fmt.Errorf("failed to persist JWT secret key to %q: %w", secretPath, err)
+	}
+
+	fmt.Fprintf(out, "[OK] Generated and saved cryptographically secure JWT secret to %s\n", secretPath)
+	return secret, nil
+}
+
 // DefaultConfig generates a new Config populated with standard defaults.
 func DefaultConfig(dataDir string, jwtSecret string) *Config {
 	if dataDir == "" {
@@ -141,20 +182,20 @@ func (m *Manager) InitOrLoad() (*Config, error) {
 	}
 	fmt.Fprintf(m.out, "[OK] Data directory structure verified\n")
 
-	// 3. Process config.json
+	// 3. Process nodephone-data/secrets/jwt.key
+	jwtSecret, err := LoadOrGenerateJWTSecret(m.dataDir, m.out)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize JWT secret key: %w", err)
+	}
+
+	// 4. Process config.json
 	configPath := filepath.Join(m.dataDir, ConfigFile)
 	var cfg *Config
 
 	if _, err := os.Stat(configPath); errors.Is(err, os.ErrNotExist) {
 		fmt.Fprintf(m.out, "[INFO] Configuration file not found. Generating default configuration...\n")
 
-		secret, err := GenerateJWTSecret()
-		if err != nil {
-			return nil, err
-		}
-		fmt.Fprintf(m.out, "[INFO] Generated cryptographically secure JWT secret\n")
-
-		cfg = DefaultConfig(m.dataDir, secret)
+		cfg = DefaultConfig(m.dataDir, jwtSecret)
 		data, err := json.MarshalIndent(cfg, "", "  ")
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal default configuration: %w", err)
@@ -178,10 +219,13 @@ func (m *Manager) InitOrLoad() (*Config, error) {
 		if err := json.Unmarshal(data, cfg); err != nil {
 			return nil, fmt.Errorf("failed to parse configuration file %q: %w", configPath, err)
 		}
+
+		// Ensure loaded config has latest JWT secret from jwt.key
+		cfg.Auth.JWTSecret = jwtSecret
 		fmt.Fprintf(m.out, "[OK] Existing configuration loaded successfully\n")
 	}
 
-	// 4. Process main.db placeholder file
+	// 5. Process main.db placeholder file
 	dbPath := filepath.Join(m.dataDir, DBFile)
 	if _, err := os.Stat(dbPath); errors.Is(err, os.ErrNotExist) {
 		fmt.Fprintf(m.out, "[INFO] Creating database placeholder file: %s...\n", dbPath)
