@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/nodephone/server/internal/auth"
 	"github.com/nodephone/server/internal/config"
 )
 
@@ -25,7 +26,7 @@ type Server struct {
 }
 
 // NewServer initializes a new Server instance configured with port and host settings from config.
-func NewServer(cfg *config.Config, version string, out io.Writer) *Server {
+func NewServer(cfg *config.Config, version string, out io.Writer, authHandler *auth.AuthHandler) *Server {
 	if out == nil {
 		out = os.Stdout
 	}
@@ -45,7 +46,7 @@ func NewServer(cfg *config.Config, version string, out io.Writer) *Server {
 	addr := fmt.Sprintf("%s:%d", host, port)
 
 	handler := NewHandler(cfg, version)
-	router := NewRouter(handler, out, DefaultTimeout)
+	router := NewRouter(handler, authHandler, out, DefaultTimeout)
 
 	httpServer := &http.Server{
 		Addr:         addr,
@@ -90,10 +91,16 @@ func (s *Server) PrintBanner() {
   Port        : %d
   Status      : RUNNING
   Endpoints   :
-    - GET  /        (Server Metadata)
-    - GET  /health  (Health Probe)
-    - GET  /version (System Version Info)
-    - GET  /ready   (Readiness Probe)
+    - GET  /                (Server Metadata)
+    - GET  /health          (Health Probe)
+    - GET  /version         (System Version Info)
+    - GET  /ready           (Readiness Probe)
+    - POST /api/auth/signup (User Account Registration)
+    - POST /api/auth/login  (User Authentication)
+    - POST /api/auth/logout (Revoke Active Session)
+    - POST /api/auth/refresh(Issue New Token Pair)
+    - GET  /api/auth/me     (Authenticated Profile)
+    - POST /api/auth/keys   (Generate API Key)
 =======================================================
 `, s.version, s.host, s.port)
 

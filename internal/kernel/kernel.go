@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nodephone/server/internal/api"
+	"github.com/nodephone/server/internal/auth"
 	"github.com/nodephone/server/internal/config"
 	"github.com/nodephone/server/internal/database"
 )
@@ -43,15 +44,16 @@ func WithNonBlocking(nonBlock bool) Option {
 
 // Kernel represents the core NodePhone server kernel subsystem.
 type Kernel struct {
-	os        string
-	arch      string
-	out       io.Writer
-	dataDir   string
-	config    *config.Config
-	db        *database.DB
-	apiServer *api.Server
-	stopCh    chan os.Signal
-	nonBlock  bool
+	os          string
+	arch        string
+	out         io.Writer
+	dataDir     string
+	config      *config.Config
+	db          *database.DB
+	authService *auth.AuthService
+	apiServer   *api.Server
+	stopCh      chan os.Signal
+	nonBlock    bool
 }
 
 // Info holds diagnostic information about the host system runtime environment.
@@ -102,14 +104,19 @@ func (k *Kernel) DB() *database.DB {
 	return k.db
 }
 
+// AuthService returns the initialized authentication service instance.
+func (k *Kernel) AuthService() *auth.AuthService {
+	return k.authService
+}
+
 // APIServer returns the initialized API engine server instance.
 func (k *Kernel) APIServer() *api.Server {
 	return k.apiServer
 }
 
 // Boot initializes the NodePhone server kernel sequence, executes the configuration engine,
-// boots the SQLite database engine, executes schema migrations, boots the HTTP API Engine,
-// and handles server lifecycle operations.
+// boots the SQLite database engine, executes schema migrations, boots the Authentication engine,
+// boots the HTTP API Engine, and handles server lifecycle operations.
 func (k *Kernel) Boot() error {
 	if k.out == nil {
 		return fmt.Errorf("kernel output writer is uninitialized")
@@ -155,12 +162,16 @@ func (k *Kernel) Boot() error {
 		return fmt.Errorf("failed to execute database auto-migrations: %w", err)
 	}
 
+	// 4. Initialize Authentication Engine
+	k.authService = auth.NewAuthService(k.db, k.config.Auth.JWTSecret, k.out)
+	authHandler := auth.NewAuthHandler(k.authService)
+
 	if _, err := fmt.Fprintf(k.out, "[OK] NodePhone Kernel initialized successfully.\n"); err != nil {
 		return fmt.Errorf("failed to write boot completion: %w", err)
 	}
 
-	// 4. Initialize HTTP API Engine
-	k.apiServer = api.NewServer(k.config, Version, k.out)
+	// 5. Initialize HTTP API Engine
+	k.apiServer = api.NewServer(k.config, Version, k.out, authHandler)
 
 	if k.nonBlock {
 		go func() {
@@ -169,7 +180,7 @@ func (k *Kernel) Boot() error {
 		return nil
 	}
 
-	// 5. Start API Server with Graceful Shutdown listener
+	// 6. Start API Server with Graceful Shutdown listener
 	return k.apiServer.ListenAndServeWithGracefulShutdown(k.stopCh)
 }
 
