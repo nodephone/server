@@ -51,7 +51,7 @@ func TestKernelBoot(t *testing.T) {
 	}()
 
 	// Send shutdown signal after boot starts
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(150 * time.Millisecond)
 	stopCh <- os.Interrupt
 
 	select {
@@ -73,9 +73,11 @@ func TestKernelBoot(t *testing.T) {
 		"[OK] Data directory structure verified",
 		"[INFO] Loading existing configuration from",
 		"[OK] Existing configuration loaded successfully",
-		"[INFO] Creating database placeholder file:",
-		"[OK] Database placeholder file created:",
 		"[OK] Configuration Engine initialization complete",
+		"[DB] Connecting to SQLite database at",
+		"[OK] SQLite database connection established",
+		"[DB] Running database migrations...",
+		"[OK] All database migrations verified",
 		"[OK] NodePhone Kernel initialized successfully.",
 		"NodePhone HTTP API Engine",
 		"[INFO] HTTP API Engine listening on",
@@ -97,6 +99,11 @@ func TestKernelBoot(t *testing.T) {
 
 	if cfg.Server.Name != "NodePhone Server" {
 		t.Errorf("expected server name 'NodePhone Server', got %q", cfg.Server.Name)
+	}
+
+	// Verify DB instance
+	if k.DB() == nil {
+		t.Fatal("expected k.DB() to return non-nil database instance")
 	}
 
 	// Verify API server instance
@@ -153,7 +160,7 @@ func TestPackageLevelBootNonBlocking(t *testing.T) {
 		errCh <- k.Boot()
 	}()
 
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(150 * time.Millisecond)
 	stopCh <- os.Interrupt
 
 	select {

@@ -2,13 +2,16 @@
 package kernel
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
 	"runtime"
+	"time"
 
 	"github.com/nodephone/server/internal/api"
 	"github.com/nodephone/server/internal/config"
+	"github.com/nodephone/server/internal/database"
 )
 
 // Version specifies the current release version of the NodePhone Server kernel.
@@ -45,6 +48,7 @@ type Kernel struct {
 	out       io.Writer
 	dataDir   string
 	config    *config.Config
+	db        *database.DB
 	apiServer *api.Server
 	stopCh    chan os.Signal
 	nonBlock  bool
@@ -93,13 +97,19 @@ func (k *Kernel) Config() *config.Config {
 	return k.config
 }
 
+// DB returns the initialized database engine instance.
+func (k *Kernel) DB() *database.DB {
+	return k.db
+}
+
 // APIServer returns the initialized API engine server instance.
 func (k *Kernel) APIServer() *api.Server {
 	return k.apiServer
 }
 
 // Boot initializes the NodePhone server kernel sequence, executes the configuration engine,
-// boots the HTTP API Engine, and handles server lifecycle operations.
+// boots the SQLite database engine, executes schema migrations, boots the HTTP API Engine,
+// and handles server lifecycle operations.
 func (k *Kernel) Boot() error {
 	if k.out == nil {
 		return fmt.Errorf("kernel output writer is uninitialized")
@@ -127,11 +137,29 @@ func (k *Kernel) Boot() error {
 	}
 	k.config = cfg
 
+	// 2. Initialize Database Engine
+	db, err := database.Open(k.config.Database.Path, k.out)
+	if err != nil {
+		return fmt.Errorf("failed to initialize database engine: %w", err)
+	}
+	k.db = db
+	defer func() {
+		_ = k.db.Close()
+	}()
+
+	// 3. Execute Database Schema Auto-Migrations
+	migCtx, migCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer migCancel()
+
+	if err := k.db.AutoMigrate(migCtx); err != nil {
+		return fmt.Errorf("failed to execute database auto-migrations: %w", err)
+	}
+
 	if _, err := fmt.Fprintf(k.out, "[OK] NodePhone Kernel initialized successfully.\n"); err != nil {
 		return fmt.Errorf("failed to write boot completion: %w", err)
 	}
 
-	// 2. Initialize HTTP API Engine
+	// 4. Initialize HTTP API Engine
 	k.apiServer = api.NewServer(k.config, Version, k.out)
 
 	if k.nonBlock {
@@ -141,7 +169,7 @@ func (k *Kernel) Boot() error {
 		return nil
 	}
 
-	// 3. Start API Server with Graceful Shutdown listener
+	// 5. Start API Server with Graceful Shutdown listener
 	return k.apiServer.ListenAndServeWithGracefulShutdown(k.stopCh)
 }
 
