@@ -46,6 +46,34 @@ CREATE TABLE IF NOT EXISTS api_keys (
 );
 `,
 	},
+	{
+		Name: "002_storage_engine",
+		SQL: `
+CREATE TABLE IF NOT EXISTS buckets (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    public BOOLEAN NOT NULL DEFAULT 0,
+    created_by TEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS objects (
+    id TEXT PRIMARY KEY,
+    bucket_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    mime_type TEXT NOT NULL,
+    storage_path TEXT NOT NULL,
+    uploaded_by TEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (bucket_id) REFERENCES buckets(id) ON DELETE CASCADE,
+    FOREIGN KEY (uploaded_by) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE(bucket_id, name)
+);
+`,
+	},
 }
 
 // AutoMigrate executes all pending system migrations in order within transactions.
